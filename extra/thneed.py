@@ -2,6 +2,7 @@
 import time
 import struct
 import json
+import base64
 import traceback
 import numpy as np
 from tinygrad.runtime.ops_gpu import CLProgram, compile_gpu
@@ -55,7 +56,7 @@ class Thneed:
 
     with open(input_fn, "rb") as f:
       json_len = struct.unpack("I", f.read(4))[0]
-      jdat = json.loads(f.read(json_len).decode('latin_1'))
+      jdat = json.loads(f.read(json_len).decode('utf-8'))
       weights = f.read()
 
     # load in the buffers
@@ -119,10 +120,10 @@ class Thneed:
         if len(a) == 0:
           aa = cl.LocalMemory(sz)
         elif len(a) == 4:
-          a = a.encode('latin_1')
+          a = base64.b64decode(a)
           aa = np.uint32(struct.unpack("I", a)[0])
         elif len(a) == 2:
-          a = a.encode('latin_1')
+          a = base64.b64decode(a)
           aa = np.uint16(struct.unpack("H", a)[0])
         elif len(a) == 8:
           #print(i,j,struct.unpack("Q", a.encode('latin_1'))[0])
@@ -164,10 +165,10 @@ class Thneed:
       argdtypes = prg.argdtypes if prg.argdtypes is not None else [None]*(len(args)-2)
       for a,d in zip(args[2:], argdtypes):
         if d == np.int16:
-          targs.append(struct.pack("H", a).decode("latin_1"))
+          targs.append(base64.b64encode(struct.pack("H", a)).decode("utf-8"))
           args_size.append(2)
         elif d == np.int32:
-          targs.append(struct.pack("I", a).decode("latin_1"))
+          targs.append(base64.b64encode(struct.pack("I", a)).decode("utf-8"))
           args_size.append(4)
         elif isinstance(a, cl.LocalMemory):
           targs.append("")
@@ -176,7 +177,7 @@ class Thneed:
           if getattr(a, "global_id", None) is None:
             setattr(a, "global_id", self.gobj)
             self.gobj += 1
-          ptr = struct.pack("Q", a.global_id).decode("latin_1")
+          ptr = base64.b64encode(struct.pack("Q", a.global_id)).decode("utf-8")
           if ptr not in saved_objs:
             if isinstance(a, cl.Buffer):
               needs_load = a in self.buffers_to_save
@@ -241,19 +242,19 @@ class Thneed:
       })
 
     jdat['outputs'] = [{
-      "buffer_id": struct.pack("Q", x.global_id).decode("latin_1"),
+      "buffer_id": base64.b64encode(struct.pack("Q", x.global_id)).decode("utf-8"),
       "size": x.size,
     } for x in self.outputs]
 
     jdat['inputs'] = [{
-      "buffer_id": struct.pack("Q", v.global_id).decode("latin_1"),
+      "buffer_id": base64.b64encode(struct.pack("Q", v.global_id)).decode("utf-8"),
       "size": v.size,
       "name": k
     } for k,v in self.inputs.items()][::-1]
 
     print(f"saving thneed to {output_fn}")
     with open(output_fn, "wb") as f:
-      j = json.dumps(jdat, ensure_ascii=False).encode('latin_1')
+      j = json.dumps(jdat, ensure_ascii=False).encode('utf-8')
       f.write(struct.pack("I", len(j)))
       f.write(j)
       f.write(b''.join(weights))
